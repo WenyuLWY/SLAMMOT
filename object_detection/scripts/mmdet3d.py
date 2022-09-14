@@ -1,5 +1,4 @@
 #! /home/wenyu/anaconda3/envs/openmmlab/bin/python
-
 from logging import shutdown
 import numpy as np
 import sys
