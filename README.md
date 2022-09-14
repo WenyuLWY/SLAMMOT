@@ -17,6 +17,8 @@ sudo apt install ros-melodic-vision-msgs
 
 sudo apt-get install ros-melodic-jsk-recognition-msgs
 
+sudo apt-get install ros-melodic-autoware-msgs
+
 sudo apt-get install ros-melodic-jsk-rviz-plugins
 
 + ceres
