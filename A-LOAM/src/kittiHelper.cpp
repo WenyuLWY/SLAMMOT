@@ -6,21 +6,30 @@
 #include <iterator>
 #include <string>
 #include <vector>
+
+#include <ros/ros.h>
+#include <rosbag/bag.h>
+
 #include <opencv2/opencv.hpp>
 #include <image_transport/image_transport.h>
 #include <opencv2/highgui/highgui.hpp>
-#include <nav_msgs/Odometry.h>
-#include <nav_msgs/Path.h>
-#include <ros/ros.h>
-#include <rosbag/bag.h>
-#include <geometry_msgs/PoseStamped.h>
 #include <cv_bridge/cv_bridge.h>
-#include <sensor_msgs/image_encodings.h>
 #include <eigen3/Eigen/Dense>
+
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+
+
+#include <nav_msgs/Odometry.h>
+#include <nav_msgs/Path.h>
+
+#include <geometry_msgs/PoseStamped.h>
+
+#include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/CameraInfo.h>
+
 
 std::vector<float> read_lidar_data(const std::string lidar_data_path)
 {
@@ -77,6 +86,7 @@ int main(int argc, char** argv)
     publish_delay = publish_delay <= 0 ? 1 : publish_delay;
 
     ros::Publisher pub_laser_cloud = n.advertise<sensor_msgs::PointCloud2>("/points_raw", 2);
+    ros::Publisher pub_camera_info = n.advertise<sensor_msgs::CameraInfo>("/camera_info", 2);
 
     image_transport::ImageTransport it(n);
     image_transport::Publisher pub_image_left = it.advertise("/image_left", 2);
@@ -86,15 +96,17 @@ int main(int argc, char** argv)
 
     std::string calib_path = dataset_folder+"sequences/" + sequence_number + "/calib.txt";
     std::vector<std::vector<double>> calibs=read_calib(calib_path);
-    Eigen::Matrix<double,3,4> P2;
+    Eigen::Matrix<double,3,4,Eigen::RowMajor> P2;
     P2 <<calibs[2][0],calibs[2][1],calibs[2][2],calibs[2][3],
     calibs[2][4],calibs[2][5],calibs[2][6],calibs[2][7],
     calibs[2][8],calibs[2][9],calibs[2][10],calibs[2][11];
-    Eigen::Matrix<double,4,4> Tr;
+    Eigen::Matrix<double,4,4,Eigen::RowMajor> Tr;
     Tr <<calibs[4][0],calibs[4][1],calibs[4][2],calibs[4][3],
     calibs[4][4],calibs[4][5],calibs[4][6],calibs[4][7],
     calibs[4][8],calibs[4][9],calibs[4][10],calibs[4][11],
     0,0,0,1;
+    Eigen::Matrix<double,3,4,Eigen::RowMajor> project_matrix;
+    project_matrix= P2*Tr;
 
     rosbag::Bag bag_out;
     if (to_bag)
@@ -180,10 +192,18 @@ int main(int argc, char** argv)
         sensor_msgs::ImagePtr image_left_msg = cv_bridge::CvImage(laser_cloud_msg.header, "bgr8", left_image).toImageMsg();
         pub_image_left.publish(image_left_msg);
 
+        sensor_msgs::CameraInfo lidar2image;
+        lidar2image.header.stamp = ros::Time().fromSec(timestamp);
+        lidar2image.header.frame_id = "/camera_init";
+        // lidar2image.P=boost::array project_matrix.data();
+        lidar2image.height=left_image.size().height;
+        lidar2image.width=left_image.size().width;
+
         if (to_bag)
         {
             bag_out.write("/image_left", ros::Time::now(), image_left_msg);
             bag_out.write("/points_raw", ros::Time::now(), laser_cloud_msg);
+            // bag_out.write("/camera_info", ros::Time::now(), lidar2image);
         }
 
         line_num ++;

@@ -1,7 +1,7 @@
 <!-- -->
 <launch>
   <arg name="namespace" default="tracking"/>
-  <arg name="tracker_input_topic" default="/detection/objects" />
+  <arg name="tracker_input_topic" default="/detection/objects_auto" />
   <arg name="tracker_output_topic" default="objects" />
 
   <!-- General Args -->

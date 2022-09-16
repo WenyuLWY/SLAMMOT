@@ -18,12 +18,14 @@ from geometry_msgs.msg import Pose, PoseStamped, PoseArray, Quaternion
 from sensor_msgs.msg import  PointCloud2
 import sensor_msgs.point_cloud2 as pc2
 from jsk_recognition_msgs.msg import  BoundingBoxArray,BoundingBox
-# from autoware_msgs.msg import Detection3DArray
+from autoware_msgs.msg import DetectedObjectArray,DetectedObject
+
 
 class objectdetection():
     def __init__(self):
-        self.subPointCloud=rospy.Subscriber ("/points_raw",PointCloud2, self.objectdetectionHandler, callback_args=None, queue_size=10 )
-        self.pubDetectionArray = rospy.Publisher('/detections/lidar_detector/objects', BoundingBoxArray, queue_size=10)
+        self.subPointCloud=rospy.Subscriber ("/points_raw",PointCloud2, self.objectdetection_callback, callback_args=None, queue_size=10 )
+        self.pubDetectionArrayJSK = rospy.Publisher('/detection/objects_jsk', BoundingBoxArray, queue_size=10)
+        self.pubDetectionArrayAuto = rospy.Publisher('/detection/objects_auto', DetectedObjectArray, queue_size=10)
         self.pubPointCloudFV = rospy.Publisher('/points_frontview', PointCloud2, queue_size=10)
         config_file = '/home/wenyu/mmdetection3d/configs/pointpillars/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.py'
         checkpoint_file = '/home/wenyu/mmdetection3d/checkpoints/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class_20220301_150306-37dc2420.pth'
@@ -31,7 +33,7 @@ class objectdetection():
         self.pcd_path="/home/wenyu/data/kitti_odometry/dataset/sequences/00/velodyne/000000.bin"
         print("successfully load model")
 
-    def objectdetectionHandler(self,pcd):
+    def objectdetection_callback(self,pcd):
         points=np.array(pc2.read_points_list(pcd))
 
         points_class = get_points_type('LIDAR')
@@ -43,27 +45,57 @@ class objectdetection():
         label=result[0]['labels_3d'].numpy()
         score = result[0]['scores_3d'].numpy()
 
-        detectionarray = BoundingBoxArray()
+        detectionarray_jsk = BoundingBoxArray()
+        detectionarray_auto=DetectedObjectArray()
         for idx, val in enumerate(score):
             if val > 0.3:
-                detection = BoundingBox()     
-                detection.header = pcd.header
-                detection.pose.position.x=boxes[idx,0]
-                detection.pose.position.y=boxes[idx,1]
-                detection.pose.position.z=boxes[idx,2]
-                detection.dimensions.x= boxes[idx,3]
-                detection.dimensions.y= boxes[idx,4]
-                detection.dimensions.z= boxes[idx,5]
-                detection.pose.orientation.x=0
-                detection.pose.orientation.y=0
-                detection.pose.orientation.z=np.sin(boxes[idx,6]/2)
-                detection.pose.orientation.w=np.cos(boxes[idx,6]/2)     
-                detection.value=val #score of detection,it is optional
-                detection.label=label[idx] #score of detection,it is optional
-                detectionarray.boxes.append(detection) 
-        detectionarray.header=pcd.header
-        self.pubDetectionArray.publish(detectionarray)
-        self.pubPointCloudFV .publish(pcd)
+                detection_jsk = BoundingBox()     
+                detection_jsk.header = pcd.header
+                detection_jsk.pose.position.x=boxes[idx,0]
+                detection_jsk.pose.position.y=boxes[idx,1]
+                detection_jsk.pose.position.z=boxes[idx,2]
+                detection_jsk.dimensions.x= boxes[idx,3]
+                detection_jsk.dimensions.y= boxes[idx,4]
+                detection_jsk.dimensions.z= boxes[idx,5]
+                detection_jsk.pose.orientation.x=0
+                detection_jsk.pose.orientation.y=0
+                detection_jsk.pose.orientation.z=np.sin(boxes[idx,6]/2)
+                detection_jsk.pose.orientation.w=np.cos(boxes[idx,6]/2)     
+                detection_jsk.value=val #score of detection_jsk,it is optional
+                detection_jsk.label=label[idx] #score of detection,it is optional
+                detectionarray_jsk.boxes.append(detection_jsk)
+
+            if val >0.3:
+                detection_auto= DetectedObject()
+                detection_auto.header = pcd.header
+                if label[idx] == 0:
+                    detection_auto.label='person'
+                elif label[idx] == 1:
+                    detection_auto.label='bicycle'
+                elif label[idx] == 2:
+                    detection_auto.label='car'
+                detection_auto.score=val
+                detection_auto.valid =True
+                detection_auto.pose_reliable = True
+                detection_auto.pose.position.x=boxes[idx,0]
+                detection_auto.pose.position.y=boxes[idx,1]
+                detection_auto.pose.position.z=boxes[idx,2]
+                detection_auto.dimensions.x= boxes[idx,3]
+                detection_auto.dimensions.y= boxes[idx,4]
+                detection_auto.dimensions.z= boxes[idx,5]
+                detection_auto.pose.orientation.x=0
+                detection_auto.pose.orientation.y=0
+                detection_auto.pose.orientation.z=np.sin(boxes[idx,6]/2)
+                detection_auto.pose.orientation.w=np.cos(boxes[idx,6]/2)   
+                detectionarray_auto.objects.append(detection_auto)
+            
+        detectionarray_jsk.header=pcd.header
+        self.pubDetectionArrayJSK.publish(detectionarray_jsk)
+
+        detectionarray_auto.header=pcd.header
+        self.pubDetectionArrayAuto.publish(detectionarray_auto)
+
+        # self.pubPointCloudFV .publish(pcd)
 
 def main():
     rospy.init_node('det3d_mmdetection3d',anonymous=True)
