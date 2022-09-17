@@ -12,10 +12,11 @@ from mmdet3d.core.points import get_points_type
 import rospy
 import cv2
 from cv_bridge import CvBridge
+import message_filters 
 
 #msgs
 from geometry_msgs.msg import Pose, PoseStamped, PoseArray, Quaternion
-from sensor_msgs.msg import  PointCloud2
+from sensor_msgs.msg import  PointCloud2,CameraInfo
 import sensor_msgs.point_cloud2 as pc2
 from jsk_recognition_msgs.msg import  BoundingBoxArray,BoundingBox
 from autoware_msgs.msg import DetectedObjectArray,DetectedObject
@@ -23,17 +24,25 @@ from autoware_msgs.msg import DetectedObjectArray,DetectedObject
 
 class objectdetection():
     def __init__(self):
-        self.subPointCloud=rospy.Subscriber ("/points_raw",PointCloud2, self.objectdetection_callback, callback_args=None, queue_size=10 )
+        # self.subPointCloud=rospy.Subscriber ("/points_raw",PointCloud2, self.objectdetection_callback, callback_args=None, queue_size=1 )
+        self.subPointCloud=message_filters.Subscriber ("/points_raw",PointCloud2 )
+        self.subCameraInfo=message_filters.Subscriber ("/camera_info",CameraInfo )
+        
+        self.ts = message_filters.TimeSynchronizer([self.subPointCloud, self.subCameraInfo], 10)
+        self.ts.registerCallback(self.objectdetection_callback)
+
         self.pubDetectionArrayJSK = rospy.Publisher('/detection/objects_jsk', BoundingBoxArray, queue_size=10)
         self.pubDetectionArrayAuto = rospy.Publisher('/detection/objects_auto', DetectedObjectArray, queue_size=10)
         self.pubPointCloudFV = rospy.Publisher('/points_frontview', PointCloud2, queue_size=10)
+
         config_file = '/home/wenyu/mmdetection3d/configs/pointpillars/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.py'
         checkpoint_file = '/home/wenyu/mmdetection3d/checkpoints/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class_20220301_150306-37dc2420.pth'
         self.model = init_model(config_file, checkpoint_file, device='cuda:0')
         self.pcd_path="/home/wenyu/data/kitti_odometry/dataset/sequences/00/velodyne/000000.bin"
+        
         print("successfully load model")
 
-    def objectdetection_callback(self,pcd):
+    def objectdetection_callback(self,pcd,camera_info):
         points=np.array(pc2.read_points_list(pcd))
 
         points_class = get_points_type('LIDAR')
@@ -48,7 +57,7 @@ class objectdetection():
         detectionarray_jsk = BoundingBoxArray()
         detectionarray_auto=DetectedObjectArray()
         for idx, val in enumerate(score):
-            if val > 0.3:
+            if val > 0.5:
                 detection_jsk = BoundingBox()     
                 detection_jsk.header = pcd.header
                 detection_jsk.pose.position.x=boxes[idx,0]
@@ -65,7 +74,7 @@ class objectdetection():
                 detection_jsk.label=label[idx] #score of detection,it is optional
                 detectionarray_jsk.boxes.append(detection_jsk)
 
-            if val >0.3:
+            if val >0.5:
                 detection_auto= DetectedObject()
                 detection_auto.header = pcd.header
                 if label[idx] == 0:

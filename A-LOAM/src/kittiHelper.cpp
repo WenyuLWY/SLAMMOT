@@ -195,15 +195,18 @@ int main(int argc, char** argv)
         sensor_msgs::CameraInfo lidar2image;
         lidar2image.header.stamp = ros::Time().fromSec(timestamp);
         lidar2image.header.frame_id = "/camera_init";
-        // lidar2image.P=boost::array project_matrix.data();
+        lidar2image.P={project_matrix(0,0),project_matrix(0,1),project_matrix(0,2),project_matrix(0,3),
+        project_matrix(1,0),project_matrix(1,1),project_matrix(1,2),project_matrix(1,3),
+        project_matrix(2,0),project_matrix(2,1),project_matrix(2,2),project_matrix(2,3)};
         lidar2image.height=left_image.size().height;
         lidar2image.width=left_image.size().width;
-
+        pub_camera_info.publish(lidar2image);
+        
         if (to_bag)
         {
             bag_out.write("/image_left", ros::Time::now(), image_left_msg);
             bag_out.write("/points_raw", ros::Time::now(), laser_cloud_msg);
-            // bag_out.write("/camera_info", ros::Time::now(), lidar2image);
+            bag_out.write("/camera_info", ros::Time::now(), lidar2image);
         }
 
         line_num ++;
