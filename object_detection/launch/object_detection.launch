@@ -2,7 +2,7 @@
 
     <node pkg="object_detection" type="det3d_mmdetection3d.py" name="det3d_mmdetection3d" output="screen" />
     
-    <node pkg="tf" type="static_transform_publisher" name="link1_link2_broadcaster" args="0 0 0 0 0 0 1 /velodyne /map 10" />
+    <node pkg="tf" type="static_transform_publisher" name="link1_link2_broadcaster" args="0 0 0 0 0 0  /velodyne /map 10" />
     
     <arg name="rviz" default="true" />
     <group if="$(arg rviz)">
