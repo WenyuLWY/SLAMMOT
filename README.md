@@ -8,6 +8,8 @@ roslaunch aloam_velodyne kitti_helper.launch
  
 roslaunch aloam_velodyne aloam_velodyne_HDL_64.launch
 
+roslaunch imm_ukf_pda_track imm_ukf_pda_track.launch
+
 rosbag play /home/wenyu/data/kitti_odometry/dataset/rosbag/kitti_00.bag /kitti/velo/pointcloud:=/velodyne_points
 
 ## 1. Prerequisites

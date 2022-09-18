@@ -1,5 +1,6 @@
 <!-- -->
 <launch>
+  <param name="/use_sim_time" value="true" />
   <arg name="namespace" default="tracking"/>
   <arg name="tracker_input_topic" default="/detection/objects_auto" />
   <arg name="tracker_output_topic" default="objects" />
