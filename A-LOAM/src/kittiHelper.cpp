@@ -90,6 +90,7 @@ int main(int argc, char** argv)
 
     image_transport::ImageTransport it(n);
     image_transport::Publisher pub_image_left = it.advertise("/image_left", 2);
+    image_transport::Publisher pub_image_depth = it.advertise("/image_depth", 2);
 
     std::string timestamp_path = "sequences/" + sequence_number + "/times.txt";
     std::ifstream timestamp_file(dataset_folder + timestamp_path, std::ifstream::in);
@@ -128,7 +129,6 @@ int main(int argc, char** argv)
         lidar_data_path << dataset_folder << "sequences/" + sequence_number + "/velodyne/" 
                         << std::setfill('0') << std::setw(6) << line_num << ".bin";
         std::vector<float> lidar_data = read_lidar_data(lidar_data_path.str());
-        // std::cout << "totally " << lidar_data.size() / 4.0 << " points in this lidar frame \n";
 
         std::vector<Eigen::Vector3d> lidar_points;
         std::vector<float> lidar_intensities;
@@ -137,21 +137,23 @@ int main(int argc, char** argv)
         {
             lidar_points.emplace_back(lidar_data[i], lidar_data[i+1], lidar_data[i+2]);
             lidar_intensities.push_back(lidar_data[i+3]);
-            // if(lidar_data[i]>=0)
-            // {
-            // Eigen::Vector4d P_xyz(lidar_data[i],lidar_data[i + 1],lidar_data[i + 2],1);
-            // Eigen::Vector3d P_uv = P2*Tr*P_xyz;
-            // P_uv << P_uv[0]/P_uv[2],P_uv[1]/P_uv[2],1;
-            //     if(P_uv[0]>=0 && P_uv[0]<=left_image.size().width && P_uv[1]>=0 && P_uv[1]<=left_image.size().height)
-            //     {
-            //         pcl::PointXYZI point;
-            //         point.x = lidar_data[i];
-            //         point.y = lidar_data[i + 1];
-            //         point.z = lidar_data[i + 2];
-            //         point.intensity = lidar_data[i + 3];
-            //         laser_cloud.push_back(point);
-            //     }
-            // }
+
+            if(lidar_data[i]>=0)
+            {
+            Eigen::Vector4d P_xyz(lidar_data[i],lidar_data[i + 1],lidar_data[i + 2],1);
+            Eigen::Vector3d P_uv = P2*Tr*P_xyz;
+            P_uv << P_uv[0]/P_uv[2],P_uv[1]/P_uv[2],1;
+                if(P_uv[0]>=0 && P_uv[0]<=left_image.size().width && P_uv[1]>=0 && P_uv[1]<=left_image.size().height)
+                {
+                    // pcl::PointXYZI point;
+                    // point.x = lidar_data[i];
+                    // point.y = lidar_data[i + 1];
+                    // point.z = lidar_data[i + 2];
+                    // point.intensity = lidar_data[i + 3];
+                    // laser_cloud.push_back(point);
+                }
+            }
+
                     pcl::PointXYZI point;
                     point.x = lidar_data[i];
                     point.y = lidar_data[i + 1];
@@ -160,28 +162,6 @@ int main(int argc, char** argv)
                     laser_cloud.push_back(point);
         }
         std::cout << "totally " <<lidar_data.size() / 4.0<<"after crop"<< laser_cloud.size()  << " points  \n";
-
-
-    ////save pcd to bin file
-    // std::ofstream out;
-    // std::stringstream save_filename;
-    // save_filename << dataset_folder << "sequences/" + sequence_number + "/fv/" 
-    //                 << std::setfill('0') << std::setw(6) << line_num << ".bin";
-    // out.open(save_filename.str(), std::ios::out | std::ios::binary);
-    // std::cout << save_filename.str() << " saved" << std::endl;
-    // int cloudSize = laser_cloud.points.size();
-    // for (int i = 0; i < cloudSize; ++i)
-    // {
-    //     float point_x = laser_cloud.points[i].x;
-    //     float point_y = laser_cloud.points[i].y;
-    //     float point_z = laser_cloud.points[i].z;
-    //     out.write(reinterpret_cast<const char *>(&point_x), sizeof(float));
-    //     out.write(reinterpret_cast<const char *>(&point_y), sizeof(float));
-    //     out.write(reinterpret_cast<const char *>(&point_z), sizeof(float));
-    // }
-    // out.close();
-
-        
 
         sensor_msgs::PointCloud2 laser_cloud_msg;
         pcl::toROSMsg(laser_cloud, laser_cloud_msg);
@@ -217,4 +197,23 @@ int main(int argc, char** argv)
 
 
     return 0;
-}
+}    
+
+////save pcd to bin file
+    // std::ofstream out;
+    // std::stringstream save_filename;
+    // save_filename << dataset_folder << "sequences/" + sequence_number + "/fv/" 
+    //                 << std::setfill('0') << std::setw(6) << line_num << ".bin";
+    // out.open(save_filename.str(), std::ios::out | std::ios::binary);
+    // std::cout << save_filename.str() << " saved" << std::endl;
+    // int cloudSize = laser_cloud.points.size();
+    // for (int i = 0; i < cloudSize; ++i)
+    // {
+    //     float point_x = laser_cloud.points[i].x;
+    //     float point_y = laser_cloud.points[i].y;
+    //     float point_z = laser_cloud.points[i].z;
+    //     out.write(reinterpret_cast<const char *>(&point_x), sizeof(float));
+    //     out.write(reinterpret_cast<const char *>(&point_y), sizeof(float));
+    //     out.write(reinterpret_cast<const char *>(&point_z), sizeof(float));
+    // }
+    // out.close();
