@@ -3,6 +3,7 @@
 
 #python libs
 from email.mime import image
+import struct
 import numpy as np
 import os
 
@@ -23,19 +24,21 @@ import sensor_msgs.point_cloud2 as pc2
 from jsk_recognition_msgs.msg import  BoundingBoxArray,BoundingBox
 from autoware_msgs.msg import DetectedObjectArray,DetectedObject
 
+#ip basic
+import depth_map_utils
 
 class objectdetection():
     def __init__(self):
         self.subPointCloud=message_filters.Subscriber ("/points_raw",PointCloud2 )
         self.subCameraInfo=message_filters.Subscriber ("/camera_info",CameraInfo )
-        
-        self.ts = message_filters.TimeSynchronizer([self.subPointCloud, self.subCameraInfo], 10)
+        self.subImageDepth=message_filters.Subscriber ("/image_depth",Image )
+        self.subImageLeft=message_filters.Subscriber ("/image_left",Image )
+        self.ts = message_filters.TimeSynchronizer([self.subPointCloud, self.subCameraInfo,self.subImageDepth, self.subImageLeft], 10)
         self.ts.registerCallback(self.objectdetection_callback)
 
         self.pubDetectionArrayJSK = rospy.Publisher('/detection/objects_jsk', BoundingBoxArray, queue_size=10)
         self.pubDetectionArrayAuto = rospy.Publisher('/detection/objects_auto', DetectedObjectArray, queue_size=10)
-        self.pubPointCloudFV = rospy.Publisher('/points_frontview', PointCloud2, queue_size=10)
-        self.pubSparseDepth = rospy.Publisher('/sparse_depth', Image, queue_size=10)
+        self.pubPointDense = rospy.Publisher('/points_dense', PointCloud2, queue_size=10)
         self.pubDenseDepth = rospy.Publisher('/dense_depth', Image, queue_size=10)
 
         # config_file = '/home/wenyu/mmdetection3d/configs/pointpillars/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.py'
@@ -44,18 +47,64 @@ class objectdetection():
         # self.pcd_path="/home/wenyu/data/kitti_odometry/dataset/sequences/00/velodyne/000000.bin"
         # print("successfully load model")
 
-    def objectdetection_callback(self,pcd,camera_info):
+    def objectdetection_callback(self,pcd,camera_info,image_depth,image_left):
         #matrix P projects lidar points to image
-        P=np.array([[camera_info.P[0],camera_info.P[1],camera_info.P[2],camera_info.P[3]],
-                        [camera_info.P[4],camera_info.P[5],camera_info.P[6],camera_info.P[7]],
-                        [camera_info.P[8],camera_info.P[8],camera_info.P[10],camera_info.P[11]]],dtype=float)
+
+        K=np.array([[camera_info.K[0],camera_info.K[1],camera_info.K[2]],
+                                [camera_info.K[3],camera_info.K[4],camera_info.K[5]],
+                                [camera_info.K[6],camera_info.K[7],camera_info.K[8]]],dtype=float)
+
+        P_velo_to_cam2=np.array([[camera_info.P[0],camera_info.P[1],camera_info.P[2],camera_info.P[3]],
+                                                    [camera_info.P[4],camera_info.P[5],camera_info.P[6],camera_info.P[7]],
+                                                    [camera_info.P[8],camera_info.P[9],camera_info.P[10],camera_info.P[11]]],dtype=float)     
+                                                              
+        P_project=np.vstack([K.dot(P_velo_to_cam2),[0,0,0,1]])
+
+        R_inv=np.linalg.inv(P_velo_to_cam2[0:3,0:3])
+        P_inv=np.vstack([np.hstack([R_inv,-R_inv.dot(np.array([P_velo_to_cam2[0:3,3]]).transpose())]),[0,0,0,1]])
+
         #pointcloud2 to mmdetection3d format
         points=np.array(pc2.read_points_list(pcd))
+
         bridge = CvBridge()
-        sparse_depth=project_depths(points[:,0:3].T,P,[camera_info.height, camera_info.width])
-        sparse_depth = np.float32(sparse_depth / 256.0)
-        print(sparse_depth.shape)
-        self.pubSparseDepth.publish(bridge.cv2_to_imgmsg(sparse_depth,'32FC1'))
+        sparse_depth = bridge.imgmsg_to_cv2(image_depth, '16UC1')
+        image=bridge.imgmsg_to_cv2(image_left, 'bgr8')
+        projected_depths = np.float32(sparse_depth / 256.0)
+        final_depths, process_dict = depth_map_utils.fill_in_multiscale(
+            projected_depths, extrapolate=False, blur_type='bilateral',
+            show_process=True)
+        depth_image = (final_depths * 256).astype(np.uint16)
+
+        i=0
+        image_pcd=np.zeros(shape=(4,camera_info.height*camera_info.width))
+        color_pcd=np.zeros(shape=(1,camera_info.height*camera_info.width))
+        fields=[PointField('x',0,PointField.FLOAT32,1),
+                        PointField('y',4,PointField.FLOAT32,1),
+                        PointField('z',8,PointField.FLOAT32,1),
+                        PointField('rgba',12,PointField.UINT32,1)]
+
+        for width in range(0,camera_info.width):
+            for height in range(0,camera_info.height):
+
+                image_pcd[0,i]=final_depths[height,width]*(width-K[0,2])/K[0,0]
+                image_pcd[1,i]=final_depths[height,width]*(height-K[1,2])/K[1,1]
+                image_pcd[2,i]=final_depths[height,width]
+                image_pcd[3,i]=1
+                # color_pcd[0,i]=image[height,width,2]*255
+                # color_pcd[1,i]=image[height,width,1]*255
+                # color_pcd[2,i]=image[height,width,0]*255
+                color_pcd[0,i]=struct.unpack('I',struct.pack('BBBB',image[height,width,0],
+                    image[height,width,1],image[height,width,2],255))[0]
+                i=i+1
+        lidar_pcd= P_inv.dot(image_pcd)
+        # lidar_pcd/=lidar_pcd[3,:]
+        # print(lidar_pcd.transpose())
+        lidar_pcd=np.vstack([lidar_pcd[0:3,:],color_pcd])
+        self.pubDenseDepth.publish(bridge.cv2_to_imgmsg(depth_image,'16UC1'))
+        self.pubPointDense .publish(pc2.create_cloud(pcd.header,fields,lidar_pcd.transpose()))
+        # self.pubPointDense .publish(pc2.create_cloud_xyz32(pcd.header,lidar_pcd[0:3,:].transpose()))
+
+
         # points_class = get_points_type('LIDAR')
         # points_mmdet3d = points_class(points, points_dim=points.shape[-1], attribute_dims=None)
         # result, data = inference_detector(self.model, points_mmdet3d)
@@ -129,64 +178,6 @@ class objectdetection():
         # self.pubDetectionArrayJSK.publish(detectionarray_jsk)
         # self.pubPointCloudFV .publish(pc2.create_cloud_xyz32(pcd.header,points_crop))
         # self.pubDetectionArrayAuto.publish(detectionarray_auto)
-
-def project_depths(point_cloud, cam_p, image_shape, max_depth=100.0):
-    """Projects a point cloud into image space and saves depths per pixel.
-    Args:
-        point_cloud: (3, N) Point cloud in cam0
-        cam_p: camera projection matrix
-        image_shape: image shape [h, w]
-        max_depth: optional, max depth for inversion
-    Returns:
-        projected_depths: projected depth map
-    """
-
-    # Only keep points in front of the camera
-    all_points = point_cloud[:,point_cloud[0,:]>=0].T
-
-    # Save the depth corresponding to each point
-    points_in_img = project_pc_to_image(all_points.T, cam_p)
-    points_in_img_int = np.int32(np.round(points_in_img))
-
-    # Remove points outside image
-    valid_indices = \
-        (points_in_img_int[0] >= 0) & (points_in_img_int[0] < image_shape[1]) & \
-        (points_in_img_int[1] >= 0) & (points_in_img_int[1] < image_shape[0])
-
-    all_points = all_points[valid_indices]
-    points_in_img_int = points_in_img_int[:, valid_indices]
-
-    # Invert depths
-    all_points[:, 2] = max_depth - all_points[:, 2]
-
-    # Only save valid pixels, keep closer points when overlapping
-    projected_depths = np.zeros(image_shape)
-    valid_indices = [points_in_img_int[1], points_in_img_int[0]]
-    projected_depths[valid_indices] = [
-        max(projected_depths[
-            points_in_img_int[1, idx], points_in_img_int[0, idx]],
-            all_points[idx, 2])
-        for idx in range(points_in_img_int.shape[1])]
-
-    projected_depths[valid_indices] = \
-        max_depth - projected_depths[valid_indices]
-
-    return projected_depths.astype(np.float32)
-
-def project_pc_to_image(point_cloud, cam_p):
-    """Projects a 3D point cloud to 2D points
-    Args:
-        point_cloud: (3, N) point cloud
-        cam_p: camera projection matrix
-    Returns:
-        pts_2d: (2, N) projected coordinates [u, v] of the 3D points
-    """
-
-    pc_padded = np.append(point_cloud, np.ones((1, point_cloud.shape[1])), axis=0)
-    pts_2d = np.dot(cam_p, pc_padded)
-
-    pts_2d[0:2] = pts_2d[0:2] / pts_2d[2]
-    return pts_2d[0:2]
 
 def main():
     rospy.init_node('det3d_mmdetection3d',anonymous=True)
