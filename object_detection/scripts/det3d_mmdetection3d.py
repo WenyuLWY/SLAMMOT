@@ -6,6 +6,8 @@ from email.mime import image
 import struct
 import numpy as np
 import os
+import pypcd
+
 
 # #mmdetection3d libs
 # from mmdet3d.apis import init_model, inference_detector
@@ -33,13 +35,14 @@ class objectdetection():
         self.subCameraInfo=message_filters.Subscriber ("/camera_info",CameraInfo )
         self.subImageDepth=message_filters.Subscriber ("/image_depth",Image )
         self.subImageLeft=message_filters.Subscriber ("/image_left",Image )
-        self.ts = message_filters.TimeSynchronizer([self.subPointCloud, self.subCameraInfo,self.subImageDepth, self.subImageLeft], 10)
+        self.ts = message_filters.TimeSynchronizer([self.subPointCloud, self.subCameraInfo,self.subImageDepth, self.subImageLeft], 100)
         self.ts.registerCallback(self.objectdetection_callback)
 
-        self.pubDetectionArrayJSK = rospy.Publisher('/detection/objects_jsk', BoundingBoxArray, queue_size=10)
-        self.pubDetectionArrayAuto = rospy.Publisher('/detection/objects_auto', DetectedObjectArray, queue_size=10)
-        self.pubPointDense = rospy.Publisher('/points_dense', PointCloud2, queue_size=10)
-        self.pubDenseDepth = rospy.Publisher('/dense_depth', Image, queue_size=10)
+        self.pubDetectionArrayJSK = rospy.Publisher('/detection/objects_jsk', BoundingBoxArray, queue_size=100)
+        self.pubDetectionArrayAuto = rospy.Publisher('/detection/objects_auto', DetectedObjectArray, queue_size=100)
+        self.pubPointDense = rospy.Publisher('/points_dense', PointCloud2, queue_size=100)
+        self.pubDenseDepth = rospy.Publisher('/dense_depth', Image, queue_size=100)
+        self.count=0
 
         # config_file = '/home/wenyu/mmdetection3d/configs/pointpillars/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.py'
         # checkpoint_file = '/home/wenyu/mmdetection3d/checkpoints/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class_20220301_150306-37dc2420.pth'
@@ -49,6 +52,7 @@ class objectdetection():
 
     def objectdetection_callback(self,pcd,camera_info,image_depth,image_left):
         #matrix P projects lidar points to image
+        start = rospy.Time.now().to_sec()
 
         K=np.array([[camera_info.K[0],camera_info.K[1],camera_info.K[2]],
                                 [camera_info.K[3],camera_info.K[4],camera_info.K[5]],
@@ -101,7 +105,23 @@ class objectdetection():
         # print(lidar_pcd.transpose())
         lidar_pcd=np.vstack([lidar_pcd[0:3,:],color_pcd])
         self.pubDenseDepth.publish(bridge.cv2_to_imgmsg(depth_image,'16UC1'))
-        self.pubPointDense .publish(pc2.create_cloud(pcd.header,fields,lidar_pcd.transpose()))
+
+        # cv2.imwrite(os.path.join('/home/wenyu/data/kitti_odometry/dataset/sequences/04/depth/','%06d.png')%self.count,depth_image)
+
+
+        dense_pcd=pc2.create_cloud(pcd.header,fields,lidar_pcd.transpose())
+        # pc=pypcd.PointCloud.from_msg(dense_pcd)
+        # pc.save(os.path.join('/home/wenyu/data/kitti_odometry/dataset/sequences/04/completion_cloud/','%06d.pcd')%self.count)
+       
+
+        self.pubPointDense.publish(dense_pcd)
+
+        end=rospy.Time.now().to_sec()
+
+        print(self.count)
+        
+        self.count+=1
+        print("time:",end-start)
         # self.pubPointDense .publish(pc2.create_cloud_xyz32(pcd.header,lidar_pcd[0:3,:].transpose()))
 
 

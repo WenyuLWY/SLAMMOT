@@ -1,5 +1,5 @@
 <launch>
-    <param name="/use_sim_time" value="true" />
+    <param name="/use_sim_time" value="false" />
 
     <node pkg="object_detection" type="det3d_mmdetection3d.py" name="det3d_mmdetection3d" output="screen" />
     

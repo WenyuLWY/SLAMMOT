@@ -130,13 +130,7 @@ def fill_in_fast(depth_map, max_depth=100.0, custom_kernel=DIAMOND_KERNEL_5,
     return depth_map
 
 
-def fill_in_multiscale(depth_map, max_depth=100.0,
-                       dilation_kernel_far=CROSS_KERNEL_3,
-                       dilation_kernel_med=CROSS_KERNEL_5,
-                       dilation_kernel_near=CROSS_KERNEL_7,
-                       extrapolate=False,
-                       blur_type='bilateral',
-                       show_process=False):
+def fill_in_multiscale(depth_map):
     """Slower, multi-scale dilation version with additional noise removal that
     provides better qualitative results.
 
@@ -157,9 +151,15 @@ def fill_in_multiscale(depth_map, max_depth=100.0,
         depth_map: dense depth map
         process_dict: OrderedDict of process images
     """
-    print("start")
-    # Convert to float32
-    depths_in = np.float32(depth_map)
+    max_depth=100.0,
+    dilation_kernel_far=CROSS_KERNEL_3
+    dilation_kernel_med=CROSS_KERNEL_5
+    dilation_kernel_near=CROSS_KERNEL_7
+    extrapolate=False
+    blur_type='bilateral'
+    show_process=False
+       # Convert to float32
+    depths_in = np.float32(depth_map/256)
 
     # Calculate bin masks before inversion
     valid_pixels_near = (depths_in > 0.1) & (depths_in <= 15.0)
@@ -283,4 +283,4 @@ def fill_in_multiscale(depth_map, max_depth=100.0,
 
         process_dict['s9_depths_out'] = depths_out
 
-    return depths_out, process_dict
+    return bytearray( (depths_out * 256).astype(np.uint16))
