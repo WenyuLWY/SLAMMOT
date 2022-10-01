@@ -103,15 +103,15 @@ int main(int argc, char** argv)
     n.getParam("publish_delay", publish_delay);
     publish_delay = publish_delay <= 0 ? 1 : publish_delay;
 
-    ros::Publisher pub_laser_cloud = n.advertise<sensor_msgs::PointCloud2>("/points_raw", 2);
-    ros::Publisher pub_camera_info = n.advertise<sensor_msgs::CameraInfo>("/camera_info", 2);
-    ros::Publisher pub_fuse_cloud = n.advertise<sensor_msgs::PointCloud2>("/points_fuse", 2);
-    ros::Publisher pub_dense_cloud_rgb = n.advertise<sensor_msgs::PointCloud2>("/points_dense", 2);
+    ros::Publisher pub_laser_cloud = n.advertise<sensor_msgs::PointCloud2>("/points_raw", 100);
+    ros::Publisher pub_camera_info = n.advertise<sensor_msgs::CameraInfo>("/camera_info", 100);
+    ros::Publisher pub_fuse_cloud = n.advertise<sensor_msgs::PointCloud2>("/points_fuse", 100);
+    ros::Publisher pub_dense_cloud_rgb = n.advertise<sensor_msgs::PointCloud2>("/points_dense", 100);
 
     image_transport::ImageTransport it(n);
-    image_transport::Publisher pub_image_left = it.advertise("/image_left", 2);
-    image_transport::Publisher pub_image_depth = it.advertise("/image_depth", 2);
-    image_transport::Publisher pub_image_depth_dense = it.advertise("/image_depth_dense", 2);
+    image_transport::Publisher pub_image_left = it.advertise("/image_left", 100);
+    image_transport::Publisher pub_image_depth = it.advertise("/image_depth", 100);
+    image_transport::Publisher pub_image_depth_dense = it.advertise("/image_depth_dense", 100);
 
     std::string timestamp_path = "sequences/" + sequence_number + "/times.txt";
     std::ifstream timestamp_file(dataset_folder + timestamp_path, std::ifstream::in);
@@ -163,7 +163,7 @@ int main(int argc, char** argv)
 //    PyRun_SimpleString("sys.path.append('/home/wenyu/catkin_ws/src/SLAMMOT/A-LOAM/src')"); 
 
     PyRun_SimpleString("sys.path.append('/home/wenyu/catkin_ws/src/SLAMMOT/A-LOAM/src')"); 
-    
+
     PyObject* pModule =  PyImport_Import(PyString_FromString("depth_map_utils"));
     // PyObject* pModule =  PyImport_ImportModule("depth_map_utils");
 
@@ -198,7 +198,7 @@ int main(int argc, char** argv)
         std::vector<Eigen::Vector3d> lidar_points;
         std::vector<float> lidar_intensities;
         pcl::PointCloud<pcl::PointXYZI> laser_cloud;
-        pcl::PointCloud<pcl::PointXYZRGB> laser_cloud_RGB;
+        pcl::PointCloud<pcl::PointXYZ> laser_cloud_RGB;
         std::unordered_map<cv::Point, pcl::PointXYZ> projection_map;
 
         cv::Mat depth_image = cv::Mat(left_image.size().height, left_image.size().width,  CV_16UC1,cv::Scalar(0));
@@ -225,13 +225,13 @@ int main(int argc, char** argv)
                     // point_1.z = lidar_data[i + 2];
                     // projection_map.insert(std::pair<cv::Point, pcl::PointXYZ>(cv::Point(u, v), point_1));
                     cv::Vec3b rgb_pixel = left_image.at<cv::Vec3b>(v, u);
-                    pcl::PointXYZRGB colored_3d_point;
+                    pcl::PointXYZ colored_3d_point;
                     colored_3d_point.x = lidar_data[i];
                     colored_3d_point.y = lidar_data[i + 1];
                     colored_3d_point.z = lidar_data[i + 2];
-                    colored_3d_point.r = rgb_pixel[2];
-                    colored_3d_point.g = rgb_pixel[1];
-                    colored_3d_point.b = rgb_pixel[0];
+                    // colored_3d_point.r = rgb_pixel[2];
+                    // colored_3d_point.g = rgb_pixel[1];
+                    // colored_3d_point.b = rgb_pixel[0];
                     laser_cloud_RGB.push_back(colored_3d_point);
                     depth_image.at<uint16_t>(v, u) =  uint16_t(P_uv[2]*256) ; 
                     depth_image_array[v][u]= uint16_t(P_uv[2]*256) ; 
@@ -254,7 +254,7 @@ int main(int argc, char** argv)
         uint16_t *data = (uint16_t *)PyByteArray_AsString(pReturn );
         cv::Mat dense_depth_image(left_image.size().height,  left_image.size().width, CV_16UC1, data);
 
-        pcl::PointCloud<pcl::PointXYZRGB> laser_cloud_dense;
+        pcl::PointCloud<pcl::PointXYZI> laser_cloud_dense;
         // Eigen::Matrix<double,4,4> T_cam2_velo_inv;
         Eigen::Isometry3d T_cam2_velo_inv=  T_cam2_velo.inverse();
         // T_cam2_velo_inv.rotate(T_cam2_velo.block(0,0,3,3));
@@ -263,7 +263,7 @@ int main(int argc, char** argv)
 
         for(auto cv_row = 0; cv_row < dense_depth_image.size().height; cv_row++){
             for(auto cv_col = 0; cv_col < dense_depth_image.size().width; cv_col++){
-                    pcl::PointXYZRGB dense_3d_point;
+                    pcl::PointXYZI dense_3d_point;
                     cv::Vec3b rgb_pixel = left_image.at<cv::Vec3b>(cv_row, cv_col);
 
 
@@ -274,20 +274,40 @@ int main(int argc, char** argv)
                         1);
                     Eigen::Vector4d P_velo = T_cam2_velo_inv*P_cam;
                     dense_3d_point.x = P_velo(0);
-                    dense_3d_point.y = P_velo(1);;
-                    dense_3d_point.z = P_velo(2);;
-                    dense_3d_point.r = rgb_pixel[2];
-                    dense_3d_point.g = rgb_pixel[1];
-                    dense_3d_point.b = rgb_pixel[0];
+                    dense_3d_point.y = P_velo(1);
+                    dense_3d_point.z = P_velo(2);
+                    dense_3d_point.intensity = 1;
+                    // dense_3d_point.r = rgb_pixel[2];
+                    // dense_3d_point.g = rgb_pixel[1];
+                    // dense_3d_point.b = rgb_pixel[0];
                     laser_cloud_dense.push_back(dense_3d_point);
             }
         }
+
+    //save pcd to bin file
+    std::ofstream out;
+    std::stringstream save_filename;
+    save_filename << dataset_folder << "sequences/" + sequence_number + "/dense/" 
+                    << std::setfill('0') << std::setw(6) << line_num << ".bin";
+    out.open(save_filename.str(), std::ios::out | std::ios::binary);
+    std::cout << save_filename.str() << " saved" << std::endl;
+    int cloudSize = laser_cloud_dense.points.size();
+    for (int i = 0; i < cloudSize; ++i)
+    {
+        float point_x = laser_cloud_dense.points[i].x;
+        float point_y = laser_cloud_dense.points[i].y;
+        float point_z = laser_cloud_dense.points[i].z;
+        out.write(reinterpret_cast<const char *>(&point_x), sizeof(float));
+        out.write(reinterpret_cast<const char *>(&point_y), sizeof(float));
+        out.write(reinterpret_cast<const char *>(&point_z), sizeof(float));
+    }
+    out.close();
 
 
         sensor_msgs::PointCloud2 laser_cloud_msg;
         pcl::toROSMsg(laser_cloud, laser_cloud_msg);
         laser_cloud_msg.header.stamp = ros::Time().fromSec(timestamp);
-        laser_cloud_msg.header.frame_id = "/velodyne";
+        laser_cloud_msg.header.frame_id = "/camera_init";
         pub_laser_cloud.publish(laser_cloud_msg);
 
         sensor_msgs::PointCloud2 cloud_msg;
@@ -297,8 +317,7 @@ int main(int argc, char** argv)
 
         sensor_msgs::PointCloud2 cloud_msg_dense_rgb;
         pcl::toROSMsg(laser_cloud_dense, cloud_msg_dense_rgb);
-        cloud_msg_dense_rgb.header.stamp = ros::Time().fromSec(timestamp);
-        cloud_msg_dense_rgb.header.frame_id = "/velodyne";
+        cloud_msg_dense_rgb.header=laser_cloud_msg.header;
         pub_dense_cloud_rgb.publish(cloud_msg_dense_rgb);
 
         sensor_msgs::ImagePtr image_left_msg = cv_bridge::CvImage(laser_cloud_msg.header, "bgr8", left_image).toImageMsg();
@@ -348,21 +367,3 @@ int main(int argc, char** argv)
     return 0;
 }    
 
-////save pcd to bin file
-    // std::ofstream out;
-    // std::stringstream save_filename;
-    // save_filename << dataset_folder << "sequences/" + sequence_number + "/fv/" 
-    //                 << std::setfill('0') << std::setw(6) << line_num << ".bin";
-    // out.open(save_filename.str(), std::ios::out | std::ios::binary);
-    // std::cout << save_filename.str() << " saved" << std::endl;
-    // int cloudSize = laser_cloud.points.size();
-    // for (int i = 0; i < cloudSize; ++i)
-    // {
-    //     float point_x = laser_cloud.points[i].x;
-    //     float point_y = laser_cloud.points[i].y;
-    //     float point_z = laser_cloud.points[i].z;
-    //     out.write(reinterpret_cast<const char *>(&point_x), sizeof(float));
-    //     out.write(reinterpret_cast<const char *>(&point_y), sizeof(float));
-    //     out.write(reinterpret_cast<const char *>(&point_z), sizeof(float));
-    // }
-    // out.close();
