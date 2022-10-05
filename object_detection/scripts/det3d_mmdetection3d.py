@@ -42,18 +42,19 @@ class objectdetection():
 
         self.pubDetectionArrayJSK = rospy.Publisher('/detection/objects_jsk', BoundingBoxArray, queue_size=100)
         self.pubDetectionArrayAuto = rospy.Publisher('/detection/objects_auto', DetectedObjectArray, queue_size=100)
+        self.pubPointRaw = rospy.Publisher('/points_raw_1', PointCloud2, queue_size=100)
         # self.pubPointDense = rospy.Publisher('/points_dense', PointCloud2, queue_size=100)
         # self.pubDenseDepth = rospy.Publisher('/dense_depth', Image, queue_size=100)
 
         config_file = '/home/wenyu/mmdetection3d/configs/pointpillars/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class.py'
         checkpoint_file = '/home/wenyu/mmdetection3d/checkpoints/hv_pointpillars_secfpn_6x8_160e_kitti-3d-3class_20220301_150306-37dc2420.pth'
         self.model = init_model(config_file, checkpoint_file, device='cuda:0')
-        self.pcd_path="/home/wenyu/data/kitti_odometry/dataset/sequences/00/velodyne/000000.bin"
+
+
         print("successfully load model")
 
     def objectdetection_callback(self,pcd,camera_info):
         #matrix P projects lidar points to image
-
 
         K=np.array([[camera_info.K[0],camera_info.K[1],camera_info.K[2]],
                                 [camera_info.K[3],camera_info.K[4],camera_info.K[5]],
@@ -65,22 +66,24 @@ class objectdetection():
                                                               
         # P_project=np.vstack([K.dot(P_velo_to_cam2),[0,0,0,1]])
         P_project=K.dot(P_velo_to_cam2)
-        
-        start = rospy.Time.now().to_sec()
-        points=np.array(pc2.read_points_list(pcd))
 
+        points=np.array(pc2.read_points_list(pcd))
         points_class = get_points_type('LIDAR')
         points_mmdet3d = points_class(points, points_dim=points.shape[-1], attribute_dims=None)
-        result, data = inference_detector(self.model, points_mmdet3d)
+
+        self.pcd_path="/home/wenyu/data/kitti_odometry/dataset/sequences/04/velodyne/%06d.bin" %pcd.header.seq
+        print(self.pcd_path)
+        result, data = inference_detector(self.model,  self.pcd_path)
+        # result, data = inference_detector(self.model, points_mmdet3d)
+
         boxes=result[0]['boxes_3d'].tensor.cpu().numpy()
         label=result[0]['labels_3d'].numpy()
         score = result[0]['scores_3d'].numpy()
-        end = rospy.Time.now().to_sec()
+
         detectionarray_jsk = BoundingBoxArray()
         detectionarray_auto=DetectedObjectArray()
         for idx, val in enumerate(score):
-
-            if val > 0.2:
+            # if val > 0.2:
                 # Point_xyz_object=np.array([[boxes[idx,0]],[boxes[idx,1]],[boxes[idx,2]],[1]],dtype=float)
                 # Point_uz_object=P_project.dot(Point_xyz_object)
                 # Point_uz_object/=Point_uz_object[2]
@@ -142,8 +145,7 @@ class objectdetection():
         # points_crop = np.array(points_crop)
         detectionarray_jsk.header=pcd.header
         self.pubDetectionArrayJSK.publish(detectionarray_jsk)
-
-        print(end-start)
+        self.pubPointRaw .publish(pcd)
         # self.pubPointCloudFV .publish(pc2.create_cloud_xyz32(pcd.header,points_crop))
         # self.pubDetectionArrayAuto.publish(detectionarray_auto)
 
